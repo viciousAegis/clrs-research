@@ -675,6 +675,7 @@ SAMPLERS = {
     'dfs': DfsSampler,
     'topological_sort': TopoSampler,
     'strongly_connected_components': SccSampler,
+    'strongly_connected_components_v2': SccSampler,
     'articulation_points': ArticulationSampler,
     'bridges': ArticulationSampler,
     'bfs': BfsSampler,

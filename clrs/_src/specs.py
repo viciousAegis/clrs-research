@@ -93,6 +93,7 @@ CLRS_30_ALGS = [
     'quicksort',
     'segments_intersect',
     'strongly_connected_components',
+    'strongly_connected_components_v2',
     'task_scheduling',
     'topological_sort',
 ]
