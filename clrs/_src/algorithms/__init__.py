@@ -34,6 +34,7 @@ from clrs._src.algorithms.graphs import topological_sort
 from clrs._src.algorithms.graphs import articulation_points
 from clrs._src.algorithms.graphs import bridges
 from clrs._src.algorithms.graphs import strongly_connected_components
+from clrs._src.algorithms.graphs import strongly_connected_components_v2
 from clrs._src.algorithms.graphs import mst_kruskal
 from clrs._src.algorithms.graphs import mst_prim
 from clrs._src.algorithms.graphs import bellman_ford
