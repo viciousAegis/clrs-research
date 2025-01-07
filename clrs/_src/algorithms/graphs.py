@@ -948,7 +948,9 @@ def strongly_connected_components_v2(A: _Array) -> _Out:
   color = np.zeros(A.shape[0], dtype=np.int32)
   color2 = np.zeros(A.shape[0], dtype=np.int32)
   d = np.zeros(A.shape[0])
+  d2 = np.zeros(A.shape[0])
   f = np.zeros(A.shape[0])
+  f2 = np.zeros(A.shape[0])
   s_prev = np.arange(A.shape[0])
   time = 0
   A_t = np.transpose(A)
@@ -968,6 +970,8 @@ def strongly_connected_components_v2(A: _Array) -> _Out:
               'color2': probing.array_cat(color2, 3),
               'd': np.copy(d),
               'f': np.copy(f),
+              'd2': np.copy(d2),
+              'f2': np.copy(f2),
               's_prev': np.copy(s_prev),
               's': probing.mask_one(s, A.shape[0]),
               'u': probing.mask_one(u, A.shape[0]),
@@ -991,6 +995,8 @@ def strongly_connected_components_v2(A: _Array) -> _Out:
                   'color2': probing.array_cat(color2, 3),
                   'd': np.copy(d),
                   'f': np.copy(f),
+                  'd2': np.copy(d2),
+                  'f2': np.copy(f2),
                   's_prev': np.copy(s_prev),
                   's': probing.mask_one(s, A.shape[0]),
                   'u': probing.mask_one(u, A.shape[0]),
@@ -1015,6 +1021,8 @@ def strongly_connected_components_v2(A: _Array) -> _Out:
                       'color2': probing.array_cat(color2, 3),
                       'd': np.copy(d),
                       'f': np.copy(f),
+                      'd2': np.copy(d2),
+                      'f2': np.copy(f2),
                       's_prev': np.copy(s_prev),
                       's': probing.mask_one(s, A.shape[0]),
                       'u': probing.mask_one(u, A.shape[0]),
@@ -1040,6 +1048,8 @@ def strongly_connected_components_v2(A: _Array) -> _Out:
                   'color2': probing.array_cat(color2, 3),
                   'd': np.copy(d),
                   'f': np.copy(f),
+                  'd2': np.copy(d2),
+                  'f2': np.copy(f2),
                   's_prev': np.copy(s_prev),
                   's': probing.mask_one(s, A.shape[0]),
                   'u': probing.mask_one(u, A.shape[0]),
@@ -1076,6 +1086,8 @@ def strongly_connected_components_v2(A: _Array) -> _Out:
               'color2': probing.array_cat(color2, 3),
               'd': np.copy(d),
               'f': np.copy(f),
+              'd2': np.copy(d2),
+              'f2': np.copy(f2),
               's_prev': np.copy(s_prev),
               's': probing.mask_one(s, A.shape[0]),
               'u': probing.mask_one(u, A.shape[0]),
@@ -1088,7 +1100,7 @@ def strongly_connected_components_v2(A: _Array) -> _Out:
         scc_id[u] = s
         if color2[u] == 0 or d[u] == 0.0:
           time += 0.01
-          d[u] = time
+          d2[u] = time
           color2[u] = 1
           probing.push(
               probes,
@@ -1100,6 +1112,8 @@ def strongly_connected_components_v2(A: _Array) -> _Out:
                   'color2': probing.array_cat(color2, 3),
                   'd': np.copy(d),
                   'f': np.copy(f),
+                  'd2': np.copy(d2),
+                  'f2': np.copy(f2),
                   's_prev': np.copy(s_prev),
                   's': probing.mask_one(s, A.shape[0]),
                   'u': probing.mask_one(u, A.shape[0]),
@@ -1124,6 +1138,8 @@ def strongly_connected_components_v2(A: _Array) -> _Out:
                       'color2': probing.array_cat(color2, 3),
                       'd': np.copy(d),
                       'f': np.copy(f),
+                      'd2': np.copy(d2),
+                      'f2': np.copy(f2),
                       's_prev': np.copy(s_prev),
                       's': probing.mask_one(s, A.shape[0]),
                       'u': probing.mask_one(u, A.shape[0]),
@@ -1137,7 +1153,7 @@ def strongly_connected_components_v2(A: _Array) -> _Out:
         if s_last == u:
           color2[u] = 2
           time += 0.01
-          f[u] = time
+          f2[u] = time
 
           probing.push(
               probes,
@@ -1149,6 +1165,8 @@ def strongly_connected_components_v2(A: _Array) -> _Out:
                   'color2': probing.array_cat(color2, 3),
                   'd': np.copy(d),
                   'f': np.copy(f),
+                  'd2': np.copy(d2),
+                  'f2': np.copy(f2),
                   's_prev': np.copy(s_prev),
                   's': probing.mask_one(s, A.shape[0]),
                   'u': probing.mask_one(u, A.shape[0]),

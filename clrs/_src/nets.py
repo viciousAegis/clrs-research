@@ -32,6 +32,7 @@ import haiku as hk
 import jax
 import jax.numpy as jnp
 
+from clrs._src.global_config import latents_config, regularisation_config
 
 _Array = chex.Array
 _DataPoint = probing.DataPoint
@@ -50,6 +51,7 @@ class _MessagePassingScanState:
   output_preds: chex.Array
   hiddens: chex.Array
   lstm_state: Optional[hk.LSTMState]
+  latents: Optional[chex.Array]
 
 
 @chex.dataclass
@@ -85,7 +87,6 @@ class Net(hk.Module):
       hint_repred_mode='soft',
       nb_dims=None,
       nb_msg_passing_steps=1,
-      debug=False,
       name: str = 'net',
   ):
     """Constructs a `Net`."""
@@ -103,7 +104,6 @@ class Net(hk.Module):
     self.use_lstm = use_lstm
     self.encoder_init = encoder_init
     self.nb_msg_passing_steps = nb_msg_passing_steps
-    self.debug = debug
 
   def _msg_passing_step(self,
                         mp_state: _MessagePassingScanState,
@@ -147,7 +147,11 @@ class Net(hk.Module):
         force_mask = None
       for hint in hints:
         hint_data = jnp.asarray(hint.data)[i]
-        _, loc, typ = spec[hint.name]
+        try:
+            _, loc, typ = spec[hint.name]
+        except:
+            loc = _Location.EDGE
+            typ = _Type.POINTER
         if needs_noise:
           if (typ == _Type.POINTER and
               decoded_hint[hint.name].type_ == _Type.SOFT_POINTER):
@@ -164,7 +168,7 @@ class Net(hk.Module):
             probing.DataPoint(
                 name=hint.name, location=loc, type_=typ, data=hint_data))
 
-    hiddens, output_preds_cand, hint_preds, lstm_state = self._one_step_pred(
+    hiddens, output_preds_cand, hint_preds, lstm_state, latents = self._one_step_pred(
         inputs, cur_hint, mp_state.hiddens,
         batch_size, nb_nodes, mp_state.lstm_state,
         spec, encs, decs, repred)
@@ -183,12 +187,13 @@ class Net(hk.Module):
         hint_preds=hint_preds,
         output_preds=output_preds,
         hiddens=hiddens,
-        lstm_state=lstm_state)
+        lstm_state=lstm_state,
+        latents=latents)
     # Save memory by not stacking unnecessary fields
     accum_mp_state = _MessagePassingScanState(  # pytype: disable=wrong-arg-types  # numpy-scalars
         hint_preds=hint_preds if return_hints else None,
         output_preds=output_preds if return_all_outputs else None,
-        hiddens=hiddens if self.debug else None, lstm_state=None)
+        hiddens=None, lstm_state=None, latents=latents)
 
     # Complying to jax.scan, the first returned value is the state we carry over
     # the second value is the output that will be stacked over steps.
@@ -202,7 +207,7 @@ class Net(hk.Module):
 
     Args:
       features_list: A list of _Features objects, each with the inputs, hints
-        and lengths for a batch o data corresponding to one algorithm.
+        and lengths for a batch of data corresponding to one algorithm.
         The list should have either length 1, at train/evaluation time,
         or length equal to the number of algorithms this Net is meant to
         process, at initialization.
@@ -249,6 +254,8 @@ class Net(hk.Module):
       inputs = features.inputs
       hints = features.hints
       lengths = features.lengths
+      aug_inputs = features.aug_inputs
+      sampled_steps = features.sampled_steps
 
       batch_size, nb_nodes = _data_dimensions(features)
 
@@ -265,7 +272,7 @@ class Net(hk.Module):
 
       mp_state = _MessagePassingScanState(  # pytype: disable=wrong-arg-types  # numpy-scalars
           hint_preds=None, output_preds=None,
-          hiddens=hiddens, lstm_state=lstm_state)
+          hiddens=hiddens, lstm_state=lstm_state, latents=None)
 
       # Do the first step outside of the scan because it has a different
       # computation graph.
@@ -282,6 +289,7 @@ class Net(hk.Module):
           return_hints=return_hints,
           return_all_outputs=return_all_outputs,
           )
+      
       mp_state, lean_mp_state = self._msg_passing_step(
           mp_state,
           i=0,
@@ -319,12 +327,9 @@ class Net(hk.Module):
     else:
       output_preds = output_mp_state.output_preds
     hint_preds = invert(accum_mp_state.hint_preds)
+    latents = accum_mp_state.latents
 
-    if self.debug:
-      hiddens = jnp.stack([v for v in accum_mp_state.hiddens])
-      return output_preds, hint_preds, hiddens
-
-    return output_preds, hint_preds
+    return output_preds, hint_preds, latents
 
   def _construct_encoders_decoders(self):
     """Constructs encoders and decoders, separate for each algorithm."""
@@ -356,10 +361,121 @@ class Net(hk.Module):
               loc, t, hidden_dim=self.hidden_dim,
               nb_dims=self.nb_dims[algo_idx][name],
               name=f'algo_{algo_idx}_{name}')
+
+        # Hint reversal
+        if regularisation_config.use_hint_reversal:
+          if stage == _Stage.HINT and t == _Type.POINTER and self.encode_hints:
+            name += '_reversed'
+            loc = _Location.EDGE
+            # Build input encoders.
+            if name == specs.ALGO_IDX_INPUT_NAME:
+              if enc_algo_idx is None:
+                enc_algo_idx = [hk.Linear(self.hidden_dim,
+                                          name=f'{name}_enc_linear')]
+              enc[name] = enc_algo_idx
+            else:
+              enc[name] = encoders.construct_encoders(
+                  stage, loc, t, hidden_dim=self.hidden_dim,
+                  init=self.encoder_init,
+                  name=f'algo_{algo_idx}_{name}')
+
+          if stage == _Stage.OUTPUT or (
+              stage == _Stage.HINT and self.decode_hints):
+            # Build output decoders.
+            dec[name] = decoders.construct_decoders(
+                loc, t, hidden_dim=self.hidden_dim,
+                nb_dims=self.nb_dims[algo_idx][name],
+                name=f'algo_{algo_idx}_{name}')
+
       encoders_.append(enc)
       decoders_.append(dec)
 
     return encoders_, decoders_
+
+
+  # def _construct_encoders_decoders(self):
+  #   """Constructs encoders and decoders, separate for each algorithm."""
+  #   encoders_ = []
+  #   decoders_ = []
+  #   enc_algo_idx = None
+
+  #   for (algo_idx, spec) in enumerate(self.spec):
+  #       enc = {}
+  #       dec = {}
+
+  #       for name, (stage, loc, t) in spec.items():
+  #           if stage == _Stage.INPUT or (stage == _Stage.HINT and self.encode_hints):
+  #               # Build input encoders.
+  #               if name == specs.ALGO_IDX_INPUT_NAME:
+  #                   if enc_algo_idx is None:
+  #                       enc_algo_idx = [hk.Linear(self.hidden_dim, name=f'{name}_enc_linear')]
+  #                   enc[name] = enc_algo_idx
+  #               else:
+  #                   if latents_config.use_shared_latent_space:
+  #                       if name not in latents_config.shared_encoder:
+  #                           latents_config.shared_encoder[name] = encoders.construct_encoders(
+  #                               stage, loc, t, hidden_dim=self.hidden_dim,
+  #                               init=self.encoder_init, name=f'shared_{name}'
+  #                           )
+  #                   else:
+  #                       enc[name] = encoders.construct_encoders(
+  #                           stage, loc, t, hidden_dim=self.hidden_dim,
+  #                           init=self.encoder_init, name=f'algo_{algo_idx}_{name}'
+  #                       )
+  #           if stage == _Stage.OUTPUT or (stage == _Stage.HINT and self.decode_hints):
+  #               # Build output decoders.
+  #               if latents_config.use_shared_latent_space:
+  #                   if name not in latents_config.shared_decoder:
+  #                       latents_config.shared_decoder[name] = decoders.construct_decoders(
+  #                           loc, t, hidden_dim=self.hidden_dim,
+  #                           nb_dims=self.nb_dims[algo_idx][name],
+  #                           name=f'shared_{name}'
+  #                       )
+  #               else:
+  #                   dec[name] = decoders.construct_decoders(
+  #                       loc, t, hidden_dim=self.hidden_dim,
+  #                       nb_dims=self.nb_dims[algo_idx][name],
+  #                       name=f'algo_{algo_idx}_{name}'
+  #                   )
+            
+  #           if regularisation_config.use_hint_reversal:
+  #               if stage == _Stage.HINT and t == _Type.POINTER and self.encode_hints:
+  #                   reversed_name = name
+  #                   reversed_loc = _Location.EDGE
+  #                   if latents_config.use_shared_latent_space:
+  #                       if reversed_name not in latents_config.shared_encoder:
+  #                           latents_config.shared_encoder[reversed_name] = encoders.construct_encoders(
+  #                               stage, reversed_loc, t, hidden_dim=self.hidden_dim,
+  #                               init=self.encoder_init, name=f'shared_{reversed_name}_enc',
+  #                           )
+  #                   else:
+  #                       enc[reversed_name] = encoders.construct_encoders(
+  #                           stage, reversed_loc, t, hidden_dim=self.hidden_dim,
+  #                           init=self.encoder_init, name=f'algo_{algo_idx}_{reversed_name}',
+  #                       )
+
+  #               if stage == _Stage.HINT and t == _Type.POINTER and self.decode_hints:
+  #                   reversed_name = name
+  #                   reversed_loc = _Location.EDGE
+  #                   if latents_config.use_shared_latent_space:
+  #                       if reversed_name not in latents_config.shared_decoder:
+  #                           latents_config.shared_decoder[reversed_name] = decoders.construct_decoders(
+  #                               reversed_loc, t, hidden_dim=self.hidden_dim,
+  #                               nb_dims=self.nb_dims[algo_idx][reversed_name],
+  #                               name=f'shared_{name}_dec'
+  #                           )
+  #                   else:
+  #                       dec[reversed_name] = decoders.construct_decoders(
+  #                           reversed_loc, t, hidden_dim=self.hidden_dim,
+  #                           nb_dims=self.nb_dims[algo_idx][name],
+  #                           name=f'algo_{algo_idx}_{reversed_name}'
+  #                       )
+
+  #       encoders_.append(enc)
+  #       decoders_.append(dec)
+
+  #   return encoders_, decoders_
+
 
   def _one_step_pred(
       self,
@@ -382,12 +498,34 @@ class Net(hk.Module):
     graph_fts = jnp.zeros((batch_size, self.hidden_dim))
     adj_mat = jnp.repeat(
         jnp.expand_dims(jnp.eye(nb_nodes), 0), batch_size, axis=0)
+    
+    # Overwrite encoders and decoders if using shared latent space.
+    if latents_config.use_shared_latent_space:
+      encs = latents_config.shared_encoder
+      decs = latents_config.shared_decoder
 
     # ENCODE ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
     # Encode node/edge/graph features from inputs and (optionally) hints.
     trajectories = [inputs]
+
     if self.encode_hints:
       trajectories.append(hints)
+    
+    # # # Debugging
+    # for dp in hints:
+    #   if dp.name == 'pi_h':
+    #     jax.debug.print('pi_h \n {pi_h}', pi_h=dp)
+    #     # jax.debug.print('pi_h data \n {pi_h}', pi_h=dp.data)
+    #   elif dp.name == 's_prev':
+    #     jax.debug.print('s_prev \n {s_prev}', s_prev=dp)
+    #     # jax.debug.print('s_prev data \n {s_prev}', s_prev=dp.data)
+    #   if dp.name == 'pi_h_reversed':
+    #     jax.debug.print('pi_h_reversed \n {pi_h_reversed}', pi_h_reversed=dp)
+    #     # jax.debug.print('pi_h_reversed data \n {pi_h_reversed}', pi_h_reversed=dp.data)
+    #   elif dp.name == 's_prev_reversed':
+    #     jax.debug.print('s_prev_reversed \n {s_prev_reversed}', s_prev_reversed=dp)
+    #     # jax.debug.print('s_prev_reversed data \n {s_prev_reversed}', s_prev_reversed=dp.data)
+
 
     for trajectory in trajectories:
       for dp in trajectory:
@@ -405,7 +543,7 @@ class Net(hk.Module):
     # PROCESS ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
     nxt_hidden = hidden
     for _ in range(self.nb_msg_passing_steps):
-      nxt_hidden, nxt_edge = self.processor(
+      nxt_hidden, nxt_edge, latents = self.processor(
           node_fts,
           edge_fts,
           graph_fts,
@@ -445,7 +583,7 @@ class Net(hk.Module):
         repred=repred,
     )
 
-    return nxt_hidden, output_preds, hint_preds, nxt_lstm_state
+    return nxt_hidden, output_preds, hint_preds, nxt_lstm_state, latents
 
 
 class NetChunked(Net):
@@ -545,7 +683,7 @@ class NetChunked(Net):
           mp_state.lstm_state)
     else:
       lstm_state = None
-    hiddens, output_preds, hint_preds, lstm_state = self._one_step_pred(
+    hiddens, output_preds, hint_preds, lstm_state, _ = self._one_step_pred(
         inputs, hints_for_pred, hiddens,
         batch_size, nb_nodes, lstm_state,
         spec, encs, decs, repred)

@@ -29,6 +29,10 @@ from clrs._src import specs
 import jax
 import numpy as np
 
+import jax.numpy as jnp
+import haiku as hk
+
+from clrs._src.global_config import regularisation_config
 
 _Array = np.ndarray
 _DataPoint = probing.DataPoint
@@ -37,7 +41,7 @@ Trajectories = List[Trajectory]
 
 
 Algorithm = Callable[..., Any]
-Features = collections.namedtuple('Features', ['inputs', 'hints', 'lengths'])
+Features = collections.namedtuple('Features', ['inputs', 'hints', 'lengths', 'aug_inputs', 'aug_hints', 'sampled_steps'])
 FeaturesChunked = collections.namedtuple(
     'Features', ['inputs', 'hints', 'is_first', 'is_last'])
 Feedback = collections.namedtuple('Feedback', ['features', 'outputs'])
@@ -72,7 +76,6 @@ class Sampler(abc.ABC):
       num_samples: int,
       *args,
       seed: Optional[int] = None,
-      track_max_steps: bool = True,
       **kwargs,
   ):
     """Initializes a `Sampler`.
@@ -81,18 +84,11 @@ class Sampler(abc.ABC):
       algorithm: The algorithm to sample from
       spec: The algorithm spec.
       num_samples: Number of algorithm unrolls to sample. If positive, all the
-        samples will be generated in the constructor, and at each call of the
-        `next` method a batch will be randomly selected among them. If -1,
-        samples are generated on the fly with each call to `next`.
+        samples will be generated in the constructor, and at each call
+        of the `next` method a batch will be randomly selected among them.
+        If -1, samples are generated on the fly with each call to `next`.
       *args: Algorithm args.
       seed: RNG seed.
-      track_max_steps: if True and sampling on the fly (`num_samples`==-1), we
-        keep track of the maximum unroll length so far to pad batched samples to
-        that length. This is desirable when batches are used in compiled
-        functions that need recompilation every time the batch size changes.
-        Also, we get an initial value for max_steps by generating 1000 samples,
-        which will slow down initialization. If uniform shape of the batches is
-        not a concern, set `track_max_steps` to False.
       **kwargs: Algorithm kwargs.
     """
 
@@ -103,28 +99,26 @@ class Sampler(abc.ABC):
     self._algorithm = algorithm
     self._args = args
     self._kwargs = kwargs
-    self._track_max_steps = track_max_steps
 
     if num_samples < 0:
-      logging.log_first_n(
-          logging.WARNING, 'Sampling dataset on-the-fly, unlimited samples.', 1
-      )
-      if track_max_steps:
-        # Get an initial estimate of max hint length
-        self.max_steps = -1
-        for _ in range(1000):
-          data = self._sample_data(*args, **kwargs)
-          _, probes = algorithm(*data)
-          _, _, hint = probing.split_stages(probes, spec)
-          for dp in hint:
-            assert dp.data.shape[1] == 1  # batching axis
-            if dp.data.shape[0] > self.max_steps:
-              self.max_steps = dp.data.shape[0]
+      logging.warning('Sampling dataset on-the-fly, unlimited samples.')
+      # Just get an initial estimate of max hint length
+      self.max_steps = -1
+      for _ in range(1000):
+        data = self._sample_data(*args, **kwargs)
+        _, probes = algorithm(*data)
+        _, _, hint = probing.split_stages(probes, spec)
+        for dp in hint:
+          assert dp.data.shape[1] == 1  # batching axis
+          if dp.data.shape[0] > self.max_steps:
+            self.max_steps = dp.data.shape[0]
+
     else:
       logging.info('Creating a dataset with %i samples.', num_samples)
       (self._inputs, self._outputs, self._hints,
        self._lengths) = self._make_batch(num_samples, spec, 0, algorithm, *args,
                                          **kwargs)
+
 
   def _make_batch(self, num_samples: int, spec: specs.Spec, min_length: int,
                   algorithm: Algorithm, *args, **kwargs):
@@ -160,16 +154,10 @@ class Sampler(abc.ABC):
     """
     if batch_size:
       if self._num_samples < 0:  # generate on the fly
-        min_length = self.max_steps if self._track_max_steps else 0
         inputs, outputs, hints, lengths = self._make_batch(
-            batch_size,
-            self._spec,
-            min_length,
-            self._algorithm,
-            *self._args,
-            **self._kwargs,
-        )
-        if self._track_max_steps and hints[0].data.shape[0] > self.max_steps:
+            batch_size, self._spec, self.max_steps,
+            self._algorithm, *self._args, **self._kwargs)
+        if hints[0].data.shape[0] > self.max_steps:
           logging.warning('Increasing hint lengh from %i to %i',
                           self.max_steps, hints[0].data.shape[0])
           self.max_steps = hints[0].data.shape[0]
@@ -193,8 +181,12 @@ class Sampler(abc.ABC):
       hints = self._hints
       lengths = self._lengths
       outputs = self._outputs
+    
+    aug_inputs = []
+    aug_hints = []
+    sampled_steps = [self._rng.randint(0, length) for length in lengths]
 
-    return Feedback(Features(inputs, hints, lengths), outputs)
+    return Feedback(Features(inputs, hints, lengths, aug_inputs, aug_hints, sampled_steps), outputs)
 
   @abc.abstractmethod
   def _sample_data(self, length: int, *args, **kwargs) -> List[_Array]:
@@ -279,7 +271,6 @@ def build_sampler(
     num_samples: int,
     *args,
     seed: Optional[int] = None,
-    track_max_steps: bool = True,
     **kwargs,
 ) -> Tuple[Sampler, specs.Spec]:
   """Builds a sampler. See `Sampler` documentation."""
@@ -295,15 +286,8 @@ def build_sampler(
   if set(clean_kwargs) != set(kwargs):
     logging.warning('Ignoring kwargs %s when building sampler class %s',
                     set(kwargs).difference(clean_kwargs), sampler_class)
-  sampler = sampler_class(
-      algorithm,
-      spec,
-      num_samples,
-      seed=seed,
-      track_max_steps=track_max_steps,
-      *args,
-      **clean_kwargs,
-  )
+  sampler = sampler_class(algorithm, spec, num_samples, seed=seed,
+                          *args, **clean_kwargs)
   return sampler, spec
 
 
@@ -675,7 +659,6 @@ SAMPLERS = {
     'dfs': DfsSampler,
     'topological_sort': TopoSampler,
     'strongly_connected_components': SccSampler,
-    'strongly_connected_components_v2': SccSampler,
     'articulation_points': ArticulationSampler,
     'bridges': ArticulationSampler,
     'bfs': BfsSampler,
@@ -905,5 +888,116 @@ def process_random_pos(sample_iterator, rng):
       features = feedback.features._replace(inputs=inputs)
       feedback = feedback._replace(features=features)
       yield feedback
+
+  return _iterate()
+
+
+def reverse_pointers(sample_iterator):
+
+  def _iterate():
+    while True:
+      feedback = next(sample_iterator)
+      hints = feedback.features.hints
+      reversed_hints = [
+        probing.DataPoint(
+          name=dp.name + '_reversed',
+          location='edge',
+          type_='pointer',
+          data=jnp.matrix_transpose(
+              hk.one_hot(dp.data, dp.data.shape[-1]) if dp.location == 'node' else dp.data
+          ) # interesting behaviour with zeros, worth investigating
+        )
+        for dp in hints if dp.type_ == 'pointer'
+      ]
+      reversed_hints = tuple(reversed_hints)
+      features = feedback.features._replace(hints=tuple(hints + reversed_hints))
+      feedback = feedback._replace(features=features)
+      yield feedback
+
+  return _iterate()
+
+
+def augment_data(sample_iterator, algorithm, split):
+
+  if split != 'train':
+    return sample_iterator
+  
+  else:
+
+    SORTING_ALGOS = [
+        'insertion_sort',
+        'bubble_sort',
+        'heapsort',
+        'quicksort',
+    ]
+
+    if algorithm in SORTING_ALGOS:
+      return _augment_sorting_data(sample_iterator)
+    else:
+      raise NotImplementedError('Data augmentation not supported for this algo.')
+
+def _augment_sorting_data(sample_iterator):
+
+  def _iterate():
+    while True:
+      feedback = next(sample_iterator)
+      features = feedback.features
+      lengths = features.lengths
+      aug_inputs = _augment_data(features.inputs)
+      aug_hints = _pad_hints(features.hints)
+      features = features._replace(aug_inputs=aug_inputs, aug_hints=aug_hints)
+      feedback = feedback._replace(features=features)
+      yield feedback
+
+  def _augment_data(inputs):
+    max_length = CLRS30['train']['length'] + 1
+    batch_size = inputs[0].data.shape[0]
+    num_inputs = len(inputs)
+
+    # Get data ranges
+    data_min = jnp.min(jnp.stack([dp.data for dp in inputs]), axis=(0, 2), keepdims=True)
+    data_max = jnp.max(jnp.stack([dp.data for dp in inputs]), axis=(0, 2), keepdims=True)
+
+    # Generate random augmentation matrices
+    aug_matrices = jax.random.uniform(
+        jax.random.PRNGKey(0),
+        shape=(num_inputs, batch_size, max_length - inputs[0].data.shape[1]),
+        minval=data_min,
+        maxval=data_max,
+    )
+
+    # Concatenate original data with augmentation matrices
+    aug_data = [
+        jnp.concatenate((dp.data, aug_matrices[i]), axis=1)
+        for i, dp in enumerate(inputs)
+    ]
+
+    # Create new DataPoints with augmented data
+    aug_inputs = tuple(
+        probing.DataPoint(
+            name=dp.name,
+            location=dp.location,
+            type_=dp.type_,
+            data=aug_data[i],
+        )
+        for i, dp in enumerate(inputs)
+    )
+
+    return aug_inputs
+
+  def _pad_hints(hints):
+    padded_hints = []
+    max_length = CLRS30['train']['length'] + 1
+    for hint in hints:
+      pad_length = max_length - hint.data.shape[-1]
+      padded_data = jnp.pad(hint.data, ((0, 0), (0, 0), (0, pad_length)))
+      padded_hints.append(probing.DataPoint(
+        name=hint.name,
+        location=hint.location,
+        type_=hint.type_,
+        data=padded_data,
+      ))
+    padded_hints = tuple(padded_hints)
+    return padded_hints
 
   return _iterate()

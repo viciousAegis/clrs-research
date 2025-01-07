@@ -17,6 +17,7 @@
 
 import functools
 import os
+from pprint import pprint
 import shutil
 from typing import Any, Dict, List, Optional
 
@@ -30,7 +31,7 @@ import requests
 import tensorflow as tf
 
 
-flags.DEFINE_list('algorithms', ['bfs'], 'Which algorithms to run.')
+flags.DEFINE_list('algorithms', ['strongly_connected_components'], 'Which algorithms to run.')
 flags.DEFINE_list('train_lengths', ['4', '7', '11', '13', '16'],
                   'Which training sizes to use. A size of -1 means '
                   'use the benchmark dataset.')
@@ -499,6 +500,10 @@ def main(unused_argv):
     # Training step.
     for algo_idx in range(len(train_samplers)):
       feedback = feedback_list[algo_idx]
+      
+      pprint(feedback.features)
+      # exit() 
+      
       rng_key, new_rng_key = jax.random.split(rng_key)
       if FLAGS.chunked_training:
         # In chunked training, we must indicate which training length we are
