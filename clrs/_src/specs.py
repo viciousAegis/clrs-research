@@ -283,6 +283,7 @@ SPECS = types.MappingProxyType({
         'd': (Stage.HINT, Location.NODE, Type.SCALAR),
         'f': (Stage.HINT, Location.NODE, Type.SCALAR),
         's_prev': (Stage.HINT, Location.NODE, Type.POINTER),
+        's_prev_reversal': (Stage.HINT, Location.NODE, Type.POINTER),
         's': (Stage.HINT, Location.NODE, Type.MASK_ONE),
         'u': (Stage.HINT, Location.NODE, Type.MASK_ONE),
         'v': (Stage.HINT, Location.NODE, Type.MASK_ONE),
