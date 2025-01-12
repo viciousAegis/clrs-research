@@ -331,7 +331,7 @@ SPECS = types.MappingProxyType({
         'scc_id_h': (Stage.HINT, Location.NODE, Type.POINTER),
         'A_t': (Stage.HINT, Location.EDGE, Type.MASK),
         'color': (Stage.HINT, Location.NODE, Type.CATEGORICAL),
-        'color2': (Stage.HINT, Location.NODE, Type.CATEGORICAL),
+        # 'color2': (Stage.HINT, Location.NODE, Type.CATEGORICAL),
         'd': (Stage.HINT, Location.NODE, Type.SCALAR),
         'f': (Stage.HINT, Location.NODE, Type.SCALAR),
         's_prev': (Stage.HINT, Location.NODE, Type.POINTER),
