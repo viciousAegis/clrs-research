@@ -71,6 +71,7 @@ def dfs(A: _Array) -> _Out:
   d = np.zeros(A.shape[0])
   f = np.zeros(A.shape[0])
   s_prev = np.arange(A.shape[0])
+  s_prev_reversal = np.arange(A.shape[0])
   time = 0
   for s in range(A.shape[0]):
     if color[s] == 0:
@@ -86,6 +87,7 @@ def dfs(A: _Array) -> _Out:
               'd': np.copy(d),
               'f': np.copy(f),
               's_prev': np.copy(s_prev),
+              's_prev_reversal': np.copy(s_prev_reversal),
               's': probing.mask_one(s, A.shape[0]),
               'u': probing.mask_one(u, A.shape[0]),
               'v': probing.mask_one(v, A.shape[0]),
@@ -106,6 +108,7 @@ def dfs(A: _Array) -> _Out:
                   'd': np.copy(d),
                   'f': np.copy(f),
                   's_prev': np.copy(s_prev),
+                  's_prev_reversal': np.copy(s_prev_reversal),
                   's': probing.mask_one(s, A.shape[0]),
                   'u': probing.mask_one(u, A.shape[0]),
                   'v': probing.mask_one(v, A.shape[0]),
@@ -119,6 +122,7 @@ def dfs(A: _Array) -> _Out:
               pi[v] = u
               color[v] = 1
               s_prev[v] = s_last
+              s_prev_reversal[s_last] = v
               s_last = v
 
               probing.push(
@@ -130,6 +134,7 @@ def dfs(A: _Array) -> _Out:
                       'd': np.copy(d),
                       'f': np.copy(f),
                       's_prev': np.copy(s_prev),
+                      's_prev_reversal': np.copy(s_prev_reversal),
                       's': probing.mask_one(s, A.shape[0]),
                       'u': probing.mask_one(u, A.shape[0]),
                       'v': probing.mask_one(v, A.shape[0]),
@@ -152,6 +157,7 @@ def dfs(A: _Array) -> _Out:
                   'd': np.copy(d),
                   'f': np.copy(f),
                   's_prev': np.copy(s_prev),
+                  's_prev_reversal': np.copy(s_prev_reversal),
                   's': probing.mask_one(s, A.shape[0]),
                   'u': probing.mask_one(u, A.shape[0]),
                   'v': probing.mask_one(v, A.shape[0]),
@@ -164,6 +170,7 @@ def dfs(A: _Array) -> _Out:
             break
           pr = s_prev[s_last]
           s_prev[s_last] = s_last
+          s_prev_reversal[s_last] = s_last
           s_last = pr
 
         u = s_last
@@ -946,10 +953,11 @@ def strongly_connected_components_v2(A: _Array) -> _Out:
 
   scc_id = np.arange(A.shape[0])
   color = np.zeros(A.shape[0], dtype=np.int32)
-  color2 = np.zeros(A.shape[0], dtype=np.int32)
+  # color2 = np.zeros(A.shape[0], dtype=np.int32)
   d = np.zeros(A.shape[0])
   f = np.zeros(A.shape[0])
   s_prev = np.arange(A.shape[0])
+  s_prev_reversal = np.arange(A.shape[0])
   time = 0
   A_t = np.transpose(A)
 
@@ -965,10 +973,11 @@ def strongly_connected_components_v2(A: _Array) -> _Out:
               'scc_id_h': np.copy(scc_id),
               'A_t': probing.graph(np.copy(A_t)),
               'color': probing.array_cat(color, 3),
-              'color2': probing.array_cat(color2, 3),
+              # 'color2': probing.array_cat(color2, 3),
               'd': np.copy(d),
               'f': np.copy(f),
               's_prev': np.copy(s_prev),
+              's_prev_reversal': np.copy(s_prev_reversal),
               's': probing.mask_one(s, A.shape[0]),
               'u': probing.mask_one(u, A.shape[0]),
               'v': probing.mask_one(v, A.shape[0]),
@@ -988,10 +997,11 @@ def strongly_connected_components_v2(A: _Array) -> _Out:
                   'scc_id_h': np.copy(scc_id),
                   'A_t': probing.graph(np.copy(A_t)),
                   'color': probing.array_cat(color, 3),
-                  'color2': probing.array_cat(color2, 3),
+                  # 'color2': probing.array_cat(color2, 3),
                   'd': np.copy(d),
                   'f': np.copy(f),
                   's_prev': np.copy(s_prev),
+                  's_prev_reversal': np.copy(s_prev_reversal),
                   's': probing.mask_one(s, A.shape[0]),
                   'u': probing.mask_one(u, A.shape[0]),
                   'v': probing.mask_one(v, A.shape[0]),
@@ -1004,6 +1014,7 @@ def strongly_connected_components_v2(A: _Array) -> _Out:
             if color[v] == 0:
               color[v] = 1
               s_prev[v] = s_last
+              s_prev_reversal[s_last] = v
               s_last = v
               probing.push(
                   probes,
@@ -1012,10 +1023,11 @@ def strongly_connected_components_v2(A: _Array) -> _Out:
                       'scc_id_h': np.copy(scc_id),
                       'A_t': probing.graph(np.copy(A_t)),
                       'color': probing.array_cat(color, 3),
-                      'color2': probing.array_cat(color2, 3),
+                      # 'color2': probing.array_cat(color2, 3),
                       'd': np.copy(d),
                       'f': np.copy(f),
                       's_prev': np.copy(s_prev),
+                      's_prev_reversal': np.copy(s_prev_reversal),
                       's': probing.mask_one(s, A.shape[0]),
                       'u': probing.mask_one(u, A.shape[0]),
                       'v': probing.mask_one(v, A.shape[0]),
@@ -1037,10 +1049,11 @@ def strongly_connected_components_v2(A: _Array) -> _Out:
                   'scc_id_h': np.copy(scc_id),
                   'A_t': probing.graph(np.copy(A_t)),
                   'color': probing.array_cat(color, 3),
-                  'color2': probing.array_cat(color2, 3),
+                  # 'color2': probing.array_cat(color2, 3),
                   'd': np.copy(d),
                   'f': np.copy(f),
                   's_prev': np.copy(s_prev),
+                  's_prev_reversal': np.copy(s_prev_reversal),
                   's': probing.mask_one(s, A.shape[0]),
                   'u': probing.mask_one(u, A.shape[0]),
                   'v': probing.mask_one(v, A.shape[0]),
@@ -1054,15 +1067,17 @@ def strongly_connected_components_v2(A: _Array) -> _Out:
             break
           pr = s_prev[s_last]
           s_prev[s_last] = s_last
+          s_prev_reversal[s_last] = s_last
           s_last = pr
 
         u = s_last
 
-  color2 = np.zeros(A.shape[0], dtype=np.int32)
+  # color2 = np.zeros(A.shape[0], dtype=np.int32)
   s_prev = np.arange(A.shape[0])
+  s_prev_reversal = np.arange(A.shape[0])
 
   for s in np.argsort(-f):
-    if color2[s] == 0:
+    if color[s] == 2:
       s_last = s
       u = s
       v = s
@@ -1073,10 +1088,11 @@ def strongly_connected_components_v2(A: _Array) -> _Out:
               'scc_id_h': np.copy(scc_id),
               'A_t': probing.graph(np.copy(A_t)),
               'color': probing.array_cat(color, 3),
-              'color2': probing.array_cat(color2, 3),
+              # 'color2': probing.array_cat(color2, 3),
               'd': np.copy(d),
               'f': np.copy(f),
               's_prev': np.copy(s_prev),
+              's_prev_reversal': np.copy(s_prev_reversal),
               's': probing.mask_one(s, A.shape[0]),
               'u': probing.mask_one(u, A.shape[0]),
               'v': probing.mask_one(v, A.shape[0]),
@@ -1086,10 +1102,10 @@ def strongly_connected_components_v2(A: _Array) -> _Out:
           })
       while True:
         scc_id[u] = s
-        if color2[u] == 0 or d[u] == 0.0:
+        if color[u] == 2 or d[u] == 0.0:
           time += 0.01
           d[u] = time
-          color2[u] = 1
+          color[u] = 1
           probing.push(
               probes,
               specs.Stage.HINT,
@@ -1097,10 +1113,11 @@ def strongly_connected_components_v2(A: _Array) -> _Out:
                   'scc_id_h': np.copy(scc_id),
                   'A_t': probing.graph(np.copy(A_t)),
                   'color': probing.array_cat(color, 3),
-                  'color2': probing.array_cat(color2, 3),
+                  # 'color2': probing.array_cat(color2, 3),
                   'd': np.copy(d),
                   'f': np.copy(f),
                   's_prev': np.copy(s_prev),
+                  's_prev_reversal': np.copy(s_prev_reversal),
                   's': probing.mask_one(s, A.shape[0]),
                   'u': probing.mask_one(u, A.shape[0]),
                   'v': probing.mask_one(v, A.shape[0]),
@@ -1110,9 +1127,10 @@ def strongly_connected_components_v2(A: _Array) -> _Out:
               })
         for v in range(A.shape[0]):
           if A_t[u, v] != 0:
-            if color2[v] == 0:
-              color2[v] = 1
+            if color[v] == 2:
+              color[v] = 1
               s_prev[v] = s_last
+              s_prev_reversal[s_last] = v
               s_last = v
               probing.push(
                   probes,
@@ -1121,10 +1139,11 @@ def strongly_connected_components_v2(A: _Array) -> _Out:
                       'scc_id_h': np.copy(scc_id),
                       'A_t': probing.graph(np.copy(A_t)),
                       'color': probing.array_cat(color, 3),
-                      'color2': probing.array_cat(color2, 3),
+                      # 'color2': probing.array_cat(color2, 3),
                       'd': np.copy(d),
                       'f': np.copy(f),
                       's_prev': np.copy(s_prev),
+                      's_prev_reversal': np.copy(s_prev_reversal),
                       's': probing.mask_one(s, A.shape[0]),
                       'u': probing.mask_one(u, A.shape[0]),
                       'v': probing.mask_one(v, A.shape[0]),
@@ -1135,7 +1154,7 @@ def strongly_connected_components_v2(A: _Array) -> _Out:
               break
 
         if s_last == u:
-          color2[u] = 2
+          color[u] = 0
           time += 0.01
           f[u] = time
 
@@ -1146,10 +1165,11 @@ def strongly_connected_components_v2(A: _Array) -> _Out:
                   'scc_id_h': np.copy(scc_id),
                   'A_t': probing.graph(np.copy(A_t)),
                   'color': probing.array_cat(color, 3),
-                  'color2': probing.array_cat(color2, 3),
+                  # 'color2': probing.array_cat(color2, 3),
                   'd': np.copy(d),
                   'f': np.copy(f),
                   's_prev': np.copy(s_prev),
+                  's_prev_reversal': np.copy(s_prev_reversal),
                   's': probing.mask_one(s, A.shape[0]),
                   'u': probing.mask_one(u, A.shape[0]),
                   'v': probing.mask_one(v, A.shape[0]),
@@ -1163,6 +1183,7 @@ def strongly_connected_components_v2(A: _Array) -> _Out:
             break
           pr = s_prev[s_last]
           s_prev[s_last] = s_last
+          s_prev_reversal[s_last] = s_last
           s_last = pr
 
         u = s_last
